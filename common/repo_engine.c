@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <libgen.h>
 
@@ -207,6 +208,21 @@ int repo_engine_push(repo_engine_t *engine) {
     engine->current_file[0] = '\0';
     LOG_INFO("REPO", "PUSH completed successfully! All files are in sync.");
 
+    /* Record commit history */
+    char summary_buf[256] = "";
+    int sum_offset = 0;
+    for (size_t i = 0; i < diff.pending_push_count && i < 3; i++) {
+        sum_offset += snprintf(summary_buf + sum_offset, sizeof(summary_buf) - (size_t)sum_offset,
+                               "%s%s", (i > 0 ? ", " : ""), diff.push_files[i]);
+    }
+    if (diff.pending_push_count > 3) {
+        snprintf(summary_buf + sum_offset, sizeof(summary_buf) - (size_t)sum_offset,
+                 " and %zu more", diff.pending_push_count - 3);
+    }
+    char final_summary[320];
+    snprintf(final_summary, sizeof(final_summary), "Pushed %zu file(s): %s", diff.pending_push_count, summary_buf);
+    repo_engine_log_history(engine, "PUSH", diff.pending_push_count, final_summary);
+
     pthread_mutex_unlock(&engine->lock);
     return 0;
 }
@@ -255,5 +271,153 @@ int repo_engine_pull(repo_engine_t *engine) {
     LOG_INFO("REPO", "PULL completed successfully! Local workspace updated.");
 
     pthread_mutex_unlock(&engine->lock);
+    return 0;
+}
+
+int repo_engine_prune(repo_engine_t *engine) {
+    if (!engine) return -1;
+
+    pthread_mutex_lock(&engine->lock);
+    engine->active_state = REPO_STATE_SYNCING;
+    engine->active_progress = 0;
+
+    repo_diff_t diff;
+    repo_compute_diff(engine->local_dir, engine->remote_dir, &diff);
+
+    if (diff.pending_prune_count == 0) {
+        engine->active_state = REPO_STATE_SYNCED;
+        engine->active_progress = 100;
+        pthread_mutex_unlock(&engine->lock);
+        return 0;
+    }
+
+    LOG_INFO("REPO", "Starting PRUNE: %zu file(s) deleted locally, removing from Remote Repo...",
+             diff.pending_prune_count);
+
+    char summary_buf[256] = "";
+    int sum_offset = 0;
+
+    for (size_t i = 0; i < diff.pending_prune_count; i++) {
+        const char *rel = diff.prune_files[i];
+        strncpy(engine->current_file, rel, sizeof(engine->current_file) - 1);
+        engine->active_progress = (int)((i * 100) / diff.pending_prune_count);
+
+        char dst_full[MINIDROP_MAX_PATH_LEN * 2];
+        snprintf(dst_full, sizeof(dst_full), "%s/%s", engine->remote_dir, rel);
+
+        LOG_INFO("REPO", "Pruning deleted file '%s' from remote...", rel);
+        if (unlink(dst_full) != 0 && errno != ENOENT) {
+            LOG_ERROR("REPO", "Failed to remove '%s': %s", dst_full, strerror(errno));
+        }
+
+        if (i < 3) {
+            sum_offset += snprintf(summary_buf + sum_offset, sizeof(summary_buf) - (size_t)sum_offset,
+                                   "%s%s", (i > 0 ? ", " : ""), rel);
+        }
+    }
+
+    if (diff.pending_prune_count > 3) {
+        snprintf(summary_buf + sum_offset, sizeof(summary_buf) - (size_t)sum_offset,
+                 " and %zu more", diff.pending_prune_count - 3);
+    }
+
+    char final_summary[320];
+    snprintf(final_summary, sizeof(final_summary), "Pruned %zu file(s): %s",
+             diff.pending_prune_count, summary_buf);
+    repo_engine_log_history(engine, "PRUNE", diff.pending_prune_count, final_summary);
+
+    engine->active_progress = 100;
+    engine->active_state = REPO_STATE_SYNCED;
+    engine->current_file[0] = '\0';
+    LOG_INFO("REPO", "PRUNE completed successfully! Remote repository cleaned.");
+
+    pthread_mutex_unlock(&engine->lock);
+    return 0;
+}
+
+int repo_engine_log_history(repo_engine_t *engine, const char *action, size_t file_count, const char *summary) {
+    if (!engine || !action) return -1;
+    char log_path[MINIDROP_MAX_PATH_LEN * 2];
+    snprintf(log_path, sizeof(log_path), "%s/.minidrop_history.log", engine->remote_dir);
+
+    FILE *f = fopen(log_path, "a");
+    if (!f) return -1;
+
+    time_t now = time(NULL);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    char time_str[64];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_info);
+
+    /* Generate pseudo-random short commit hash */
+    unsigned int h = (unsigned int)(now ^ (now >> 8) ^ (file_count << 16) ^ (unsigned int)getpid());
+    char commit_id[16];
+    snprintf(commit_id, sizeof(commit_id), "%07x", h & 0x0fffffff);
+
+    /* Clean summary - replace pipe or newlines if any */
+    char clean_sum[512];
+    strncpy(clean_sum, summary ? summary : "Sync event", sizeof(clean_sum) - 1);
+    clean_sum[sizeof(clean_sum) - 1] = '\0';
+    for (char *p = clean_sum; *p; p++) {
+        if (*p == '|' || *p == '\n' || *p == '\r' || *p == '"') *p = ' ';
+    }
+
+    fprintf(f, "%s|%s|%s|%zu|%s\n", time_str, commit_id, action, file_count, clean_sum);
+    fclose(f);
+    return 0;
+}
+
+int repo_engine_get_history_json(repo_engine_t *engine, char *out_buf, size_t max_len) {
+    if (!engine || !out_buf || max_len < 16) return -1;
+    char log_path[MINIDROP_MAX_PATH_LEN * 2];
+    snprintf(log_path, sizeof(log_path), "%s/.minidrop_history.log", engine->remote_dir);
+
+    FILE *f = fopen(log_path, "r");
+    if (!f) {
+        snprintf(out_buf, max_len, "[]");
+        return 0;
+    }
+
+    char lines[64][512];
+    size_t line_count = 0;
+    char buf[512];
+    while (fgets(buf, sizeof(buf), f)) {
+        if (strlen(buf) < 10) continue;
+        buf[strcspn(buf, "\r\n")] = '\0';
+        if (line_count < 64) {
+            strncpy(lines[line_count], buf, sizeof(lines[line_count]) - 1);
+            lines[line_count][sizeof(lines[line_count]) - 1] = '\0';
+            line_count++;
+        } else {
+            for (size_t k = 0; k < 63; k++) {
+                strcpy(lines[k], lines[k+1]);
+            }
+            strncpy(lines[63], buf, sizeof(lines[63]) - 1);
+            lines[63][sizeof(lines[63]) - 1] = '\0';
+        }
+    }
+    fclose(f);
+
+    /* Output in reverse chronological order (newest first) */
+    int offset = snprintf(out_buf, max_len, "[");
+    int first = 1;
+    for (ssize_t i = (ssize_t)line_count - 1; i >= 0; i--) {
+        char *line_copy = lines[i];
+        char *time_str = strtok(line_copy, "|");
+        char *commit_id = strtok(NULL, "|");
+        char *action = strtok(NULL, "|");
+        char *count_str = strtok(NULL, "|");
+        char *summary = strtok(NULL, "|");
+
+        if (!time_str || !commit_id || !action || !count_str) continue;
+        if (!summary) summary = "";
+
+        offset += snprintf(out_buf + offset, max_len - (size_t)offset,
+                           "%s{\"id\":\"%s\",\"time\":\"%s\",\"action\":\"%s\",\"count\":%s,\"summary\":\"%s\"}",
+                           (first ? "" : ","), commit_id, time_str, action, count_str, summary);
+        first = 0;
+        if (offset >= (int)max_len - 128) break;
+    }
+    snprintf(out_buf + offset, max_len - (size_t)offset, "]");
     return 0;
 }
