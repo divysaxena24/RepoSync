@@ -39,5 +39,20 @@ int repo_engine_push(repo_engine_t *engine);
  */
 int repo_engine_pull(repo_engine_t *engine);
 
+/**
+ * @brief Execute PRUNE action: Remove files from remote repository that were deleted locally.
+ */
+int repo_engine_prune(repo_engine_t *engine);
+
+/**
+ * @brief Record a sync or commit event into the persistent repository history log.
+ */
+int repo_engine_log_history(repo_engine_t *engine, const char *action, size_t file_count, const char *summary);
+
+/**
+ * @brief Retrieve recent repository history as a JSON array string.
+ */
+int repo_engine_get_history_json(repo_engine_t *engine, char *out_buf, size_t max_len);
+
 #endif /* MINIDROP_REPO_ENGINE_H */
 
