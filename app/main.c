@@ -38,6 +38,7 @@ static void print_help(const char *prog) {
     printf("  status             Check synchronization diff between local and remote\n");
     printf("  push               Push all local changes to the Remote Repository\n");
     printf("  pull               Pull all updates from Remote Repository to local\n");
+    printf("  prune              Remove files from Remote that were deleted locally\n");
     printf("  help               Show this help menu\n\n");
     printf("Options:\n");
     printf("  --port <port>      HTTP port for Web Dashboard (default: %d)\n", DEFAULT_HTTP_PORT);
@@ -131,8 +132,22 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* 4. WEB DASHBOARD COMMAND (Default) */
+    /* 4. PRUNE COMMAND */
+    if (strcmp(cmd, "prune") == 0) {
+        print_banner();
+        printf("Executing PRUNE: %s -> %s\n\n", local_dir, remote_dir);
+        if (repo_engine_prune(&engine) == 0) {
+            printf("\n[SUCCESS] Remote Repository pruned of locally deleted files!\n");
+            return EXIT_SUCCESS;
+        } else {
+            printf("\n[ERROR] Prune failed.\n");
+            return EXIT_FAILURE;
+        }
+    }
+
+    /* 5. WEB DASHBOARD COMMAND (Default) */
     if (strcmp(cmd, "web") == 0) {
+        signal(SIGPIPE, SIG_IGN);
         signal(SIGINT, handle_sig);
         signal(SIGTERM, handle_sig);
 
