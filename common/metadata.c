@@ -233,6 +233,12 @@ int repo_compute_diff(const char *local_dir, const char *remote_dir, repo_diff_t
                         rem->rel_path, MINIDROP_MAX_PATH_LEN - 1);
             }
             out_diff->pending_pull_count++;
+
+            if (out_diff->pending_prune_count < 64) {
+                strncpy(out_diff->prune_files[out_diff->pending_prune_count],
+                        rem->rel_path, MINIDROP_MAX_PATH_LEN - 1);
+            }
+            out_diff->pending_prune_count++;
         }
     }
 
@@ -241,10 +247,11 @@ int repo_compute_diff(const char *local_dir, const char *remote_dir, repo_diff_t
         out_diff->state = REPO_STATE_NEEDS_PUSH;
         snprintf(out_diff->status_message, sizeof(out_diff->status_message),
                  "%zu file(s) modified or new. Push required.", out_diff->pending_push_count);
-    } else if (out_diff->pending_pull_count > 0) {
+    } else if (out_diff->pending_prune_count > 0) {
+        /* If no new push files, but remote has files deleted locally */
         out_diff->state = REPO_STATE_NEEDS_PULL;
         snprintf(out_diff->status_message, sizeof(out_diff->status_message),
-                 "%zu file(s) updated on remote. Pull available.", out_diff->pending_pull_count);
+                 "%zu file(s) differ between workspace and remote. Prune or pull available.", out_diff->pending_prune_count);
     } else {
         out_diff->state = REPO_STATE_SYNCED;
         snprintf(out_diff->status_message, sizeof(out_diff->status_message),
