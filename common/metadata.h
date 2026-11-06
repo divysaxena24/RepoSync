@@ -45,10 +45,12 @@ typedef struct {
     repo_state_t state;
     size_t pending_push_count;
     size_t pending_pull_count;
+    size_t pending_prune_count;
     size_t total_local_files;
     size_t total_remote_files;
     char push_files[64][MINIDROP_MAX_PATH_LEN];
     char pull_files[64][MINIDROP_MAX_PATH_LEN];
+    char prune_files[64][MINIDROP_MAX_PATH_LEN];
     int progress_pct;
     char status_message[256];
 } repo_diff_t;
