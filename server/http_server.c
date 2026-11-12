@@ -1,6 +1,6 @@
 /**
  * @file http_server.c
- * @brief Embedded micro HTTP/REST server implementation with File Viewer, Prune Sync, and Commit History.
+ * @brief Embedded micro HTTP/REST server implementation with Autonomous Real-Time Auto-Sync.
  */
 
 #include "http_server.h"
@@ -25,7 +25,7 @@ static const char *HTML_DASHBOARD =
 "<head>\n"
 "<meta charset='UTF-8'>\n"
 "<meta name='viewport' content='width=device-width, initial-scale=1.0'>\n"
-"<title>MiniDrop - Single-User Remote Repo</title>\n"
+"<title>MiniDrop - Autonomous Real-Time RepoSync</title>\n"
 "<style>\n"
 "  :root {\n"
 "    --bg-dark: #0f172a;\n"
@@ -33,10 +33,7 @@ static const char *HTML_DASHBOARD =
 "    --text-main: #f8fafc;\n"
 "    --text-muted: #94a3b8;\n"
 "    --synced: #10b981;\n"
-"    --push: #3b82f6;\n"
-"    --pull: #8b5cf6;\n"
-"    --syncing: #f59e0b;\n"
-"    --prune: #f97316;\n"
+"    --syncing: #3b82f6;\n"
 "    --error: #ef4444;\n"
 "  }\n"
 "  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }\n"
@@ -46,101 +43,112 @@ static const char *HTML_DASHBOARD =
 "  .title h1 { font-size: 1.6rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }\n"
 "  .badge { padding: 0.35rem 0.85rem; border-radius: 9999px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; background: #334155; color: var(--text-muted); }\n"
 "  \n"
-"  .button-hero-card {\n"
-"    background: var(--card-bg);\n"
+"  /* AUTONOMOUS AUTO-SYNC HERO CARD */\n"
+"  .sync-hero-card {\n"
+"    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);\n"
 "    border-radius: 1rem;\n"
-"    padding: 2.5rem 2rem;\n"
-"    text-align: center;\n"
-"    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);\n"
+"    padding: 2rem 2.25rem;\n"
+"    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);\n"
 "    border: 1px solid #334155;\n"
 "    margin-bottom: 2rem;\n"
 "  }\n"
-"  \n"
-"  /* THE SMART DYNAMIC ACTION BUTTON */\n"
-"  #smart-btn {\n"
-"    width: 100%;\n"
-"    max-width: 500px;\n"
-"    padding: 1.25rem 2rem;\n"
-"    font-size: 1.25rem;\n"
+"  .hero-top-row {\n"
+"    display: flex;\n"
+"    justify-content: space-between;\n"
+"    align-items: center;\n"
+"    margin-bottom: 1.25rem;\n"
+"  }\n"
+"  .pulse-indicator {\n"
+"    display: flex;\n"
+"    align-items: center;\n"
+"    gap: 0.65rem;\n"
+"  }\n"
+"  .pulse-dot {\n"
+"    width: 13px;\n"
+"    height: 13px;\n"
+"    border-radius: 50%;\n"
+"    background-color: var(--synced);\n"
+"    box-shadow: 0 0 12px var(--synced);\n"
+"    animation: pulse 1.8s infinite;\n"
+"  }\n"
+"  .pulse-dot.syncing {\n"
+"    background-color: var(--syncing);\n"
+"    box-shadow: 0 0 14px var(--syncing);\n"
+"  }\n"
+"  .pulse-title {\n"
+"    font-size: 0.85rem;\n"
 "    font-weight: 700;\n"
-"    border: none;\n"
-"    border-radius: 0.75rem;\n"
-"    cursor: pointer;\n"
-"    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n"
+"    letter-spacing: 0.05em;\n"
+"    color: #34d399;\n"
+"    text-transform: uppercase;\n"
+"  }\n"
+"  .engine-mode-pill {\n"
+"    font-size: 0.75rem;\n"
+"    font-weight: 600;\n"
+"    padding: 0.25rem 0.65rem;\n"
+"    background: #1e3a8a;\n"
+"    color: #93c5fd;\n"
+"    border-radius: 9999px;\n"
+"    border: 1px solid #2563eb;\n"
+"  }\n"
+"  .hero-main-status {\n"
+"    font-size: 1.45rem;\n"
+"    font-weight: 700;\n"
+"    display: flex;\n"
+"    align-items: center;\n"
+"    gap: 0.75rem;\n"
+"    color: #f8fafc;\n"
+"    margin-bottom: 0.5rem;\n"
+"  }\n"
+"  .status-icon {\n"
 "    display: inline-flex;\n"
 "    align-items: center;\n"
 "    justify-content: center;\n"
-"    gap: 0.75rem;\n"
-"    box-shadow: 0 4px 14px rgba(0,0,0,0.25);\n"
-"  }\n"
-"  \n"
-"  .btn-synced {\n"
+"    width: 36px;\n"
+"    height: 36px;\n"
+"    border-radius: 50%;\n"
 "    background: #064e3b;\n"
-"    color: #6ee7b7;\n"
-"    border: 1px solid var(--synced) !important;\n"
-"    cursor: default !important;\n"
+"    color: #34d399;\n"
+"    font-size: 1.1rem;\n"
+"    border: 1px solid #10b981;\n"
 "  }\n"
-"  .btn-push {\n"
-"    background: linear-gradient(135deg, #2563eb, #1d4ed8);\n"
-"    color: white;\n"
-"    box-shadow: 0 0 25px rgba(59, 130, 246, 0.5) !important;\n"
+"  .status-icon.syncing {\n"
+"    background: #1e3a8a;\n"
+"    color: #60a5fa;\n"
+"    border-color: #3b82f6;\n"
 "  }\n"
-"  .btn-push:hover { transform: translateY(-2px); box-shadow: 0 0 35px rgba(59, 130, 246, 0.8) !important; }\n"
-"  \n"
-"  .btn-pull {\n"
-"    background: linear-gradient(135deg, #7c3aed, #6d28d9);\n"
-"    color: white;\n"
-"    box-shadow: 0 0 25px rgba(139, 92, 246, 0.5) !important;\n"
-"  }\n"
-"  .btn-pull:hover { transform: translateY(-2px); box-shadow: 0 0 35px rgba(139, 92, 246, 0.8) !important; }\n"
-"  \n"
-"  .btn-syncing {\n"
-"    background: #78350f;\n"
-"    color: #fde68a;\n"
-"    cursor: not-allowed !important;\n"
-"    animation: pulse 1.5s infinite;\n"
-"  }\n"
-"  \n"
-"  .btn-prune {\n"
-"    margin-top: 1rem;\n"
-"    padding: 0.75rem 1.5rem;\n"
+"  .hero-subtext {\n"
+"    color: var(--text-muted);\n"
 "    font-size: 0.95rem;\n"
-"    font-weight: 700;\n"
-"    border-radius: 0.5rem;\n"
-"    border: 1px solid #ea580c;\n"
-"    background: linear-gradient(135deg, #c2410c, #9a3412);\n"
-"    color: #ffedd5;\n"
-"    cursor: pointer;\n"
-"    transition: all 0.2s;\n"
-"    display: inline-flex;\n"
-"    align-items: center;\n"
-"    gap: 0.5rem;\n"
+"    line-height: 1.5;\n"
+"    margin-bottom: 1.25rem;\n"
 "  }\n"
-"  .btn-prune:hover {\n"
-"    background: #ea580c;\n"
-"    transform: translateY(-2px);\n"
-"    box-shadow: 0 0 20px rgba(249, 115, 22, 0.5);\n"
+"  .hero-meta-bar {\n"
+"    display: flex;\n"
+"    flex-wrap: wrap;\n"
+"    gap: 0.75rem;\n"
+"    border-top: 1px solid #334155;\n"
+"    padding-top: 1rem;\n"
 "  }\n"
-"  \n"
-"  .btn-error {\n"
-"    background: #7f1d1d;\n"
-"    color: #fca5a5;\n"
-"    cursor: not-allowed !important;\n"
+"  .meta-tag {\n"
+"    font-size: 0.8rem;\n"
+"    background: #090d16;\n"
+"    border: 1px solid #1e293b;\n"
+"    padding: 0.3rem 0.65rem;\n"
+"    border-radius: 0.35rem;\n"
+"    color: #94a3b8;\n"
 "  }\n"
 "  \n"
 "  @keyframes pulse {\n"
 "    0%, 100% { opacity: 1; transform: scale(1); }\n"
-"    50% { opacity: 0.85; transform: scale(0.99); }\n"
+"    50% { opacity: 0.75; transform: scale(0.98); }\n"
 "  }\n"
-"  \n"
-"  .status-text { margin-top: 1rem; color: var(--text-muted); font-size: 0.95rem; }\n"
 "  \n"
 "  .repo-grid {\n"
 "    display: grid;\n"
 "    grid-template-columns: 1fr 1fr;\n"
 "    gap: 1.5rem;\n"
 "  }\n"
-"  \n"
 "  @media (max-width: 768px) {\n"
 "    .repo-grid { grid-template-columns: 1fr; }\n"
 "  }\n"
@@ -151,7 +159,6 @@ static const char *HTML_DASHBOARD =
 "    border: 1px solid #334155;\n"
 "    padding: 1.5rem;\n"
 "  }\n"
-"  \n"
 "  .card-header {\n"
 "    display: flex;\n"
 "    justify-content: space-between;\n"
@@ -168,7 +175,6 @@ static const char *HTML_DASHBOARD =
 "    max-height: 320px;\n"
 "    overflow-y: auto;\n"
 "  }\n"
-"  \n"
 "  .file-item {\n"
 "    display: flex;\n"
 "    align-items: center;\n"
@@ -183,8 +189,6 @@ static const char *HTML_DASHBOARD =
 "  .file-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; }\n"
 "  \n"
 "  .tag-synced { color: #34d399; font-size: 0.75rem; font-weight: 600; background: rgba(16, 185, 129, 0.1); padding: 0.2rem 0.5rem; border-radius: 0.25rem; }\n"
-"  .tag-new { color: #60a5fa; font-size: 0.75rem; font-weight: 600; background: rgba(59, 130, 246, 0.1); padding: 0.2rem 0.5rem; border-radius: 0.25rem; }\n"
-"  .tag-deleted { color: #fb923c; font-size: 0.75rem; font-weight: 600; background: rgba(249, 115, 22, 0.1); padding: 0.2rem 0.5rem; border-radius: 0.25rem; }\n"
 "  \n"
 "  .btn-action {\n"
 "    background: #334155;\n"
@@ -230,7 +234,6 @@ static const char *HTML_DASHBOARD =
 "  .timeline-badge { font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.5rem; border-radius: 9999px; text-transform: uppercase; }\n"
 "  .badge-push { background: #1e3a8a; color: #93c5fd; }\n"
 "  .badge-prune { background: #7c2d12; color: #fdba74; }\n"
-"  .badge-pull { background: #4c1d95; color: #c4b5fd; }\n"
 "  .timeline-desc { font-size: 0.85rem; color: #e2e8f0; margin-top: 0.25rem; }\n"
 "  .timeline-time { font-size: 0.75rem; color: var(--text-muted); }\n"
 "  \n"
@@ -278,17 +281,26 @@ static const char *HTML_DASHBOARD =
 "    <span class='badge' id='conn-badge'>Connecting...</span>\n"
 "  </header>\n"
 "\n"
-"  <!-- SMART ACTION BUTTON HERO -->\n"
-"  <div class='button-hero-card'>\n"
-"    <button id='smart-btn' class='btn-synced' onclick='handleSmartButtonClick()'>\n"
-"      <span id='btn-icon'>✓</span>\n"
-"      <span id='btn-text'>Checking Status...</span>\n"
-"    </button>\n"
-"    <div class='status-text' id='status-msg'>Scanning local workspace and remote repository...</div>\n"
-"    <div>\n"
-"      <button id='prune-btn' class='btn-prune' style='display:none;' onclick='handlePruneClick()'>\n"
-"        🗑️ Prune Remote (<span id='prune-count'>0</span> deleted files)\n"
-"      </button>\n"
+"  <!-- AUTONOMOUS AUTO-SYNC HERO CARD (ZERO BUTTONS) -->\n"
+"  <div class='sync-hero-card'>\n"
+"    <div class='hero-top-row'>\n"
+"      <div class='pulse-indicator'>\n"
+"        <span class='pulse-dot' id='pulse-dot'></span>\n"
+"        <span class='pulse-title' id='pulse-title'>Autonomous Real-Time Sync Active</span>\n"
+"      </div>\n"
+"      <span class='engine-mode-pill'>Zero-Click Continuous Sync</span>\n"
+"    </div>\n"
+"    <div class='hero-main-status' id='hero-status'>\n"
+"      <span class='status-icon' id='status-icon'>✓</span>\n"
+"      <span id='status-title'>Workspace & Remote Repo In Sync</span>\n"
+"    </div>\n"
+"    <div class='hero-subtext' id='status-desc'>\n"
+"      Zero-click continuous engine active. Any file creation, modification, or deletion in ./workspace is instantly committed to ./storage/repo with OpenSSL SHA-256 verification.\n"
+"    </div>\n"
+"    <div class='hero-meta-bar'>\n"
+"      <span class='meta-tag' id='last-event-tag'>⚡ Last Event: All files synchronized</span>\n"
+"      <span class='meta-tag'>📁 Path: ./workspace ➔ ./storage/repo</span>\n"
+"      <span class='meta-tag'>🔒 Atomic POSIX rename() commit</span>\n"
 "    </div>\n"
 "  </div>\n"
 "\n"
@@ -353,7 +365,6 @@ static const char *HTML_DASHBOARD =
 "</div>\n"
 "\n"
 "<script>\n"
-"  let currentState = 'SYNCED';\n"
 "  let consecutiveErrors = 0;\n"
 "\n"
 "  async function fetchStatus() {\n"
@@ -366,13 +377,13 @@ static const char *HTML_DASHBOARD =
 "    } catch (err) {\n"
 "      consecutiveErrors++;\n"
 "      if (consecutiveErrors >= 3) {\n"
-"        const btn = document.getElementById('smart-btn');\n"
-"        btn.className = 'btn-error';\n"
-"        document.getElementById('btn-icon').textContent = '⚠';\n"
-"        document.getElementById('btn-text').textContent = 'Server Offline';\n"
-"        document.getElementById('status-msg').textContent = 'Unable to connect to MiniDrop backend.';\n"
 "        document.getElementById('conn-badge').textContent = 'Offline';\n"
 "        document.getElementById('conn-badge').style.background = '#7f1d1d';\n"
+"        document.getElementById('status-title').textContent = 'Backend Offline';\n"
+"        document.getElementById('status-icon').textContent = '⚠';\n"
+"        document.getElementById('pulse-title').textContent = 'DISCONNECTED';\n"
+"        document.getElementById('pulse-title').style.color = '#f87171';\n"
+"        document.getElementById('pulse-dot').style.backgroundColor = '#ef4444';\n"
 "      }\n"
 "    }\n"
 "  }\n"
@@ -395,46 +406,38 @@ static const char *HTML_DASHBOARD =
 "  }\n"
 "\n"
 "  function updateDashboard(data) {\n"
-"    currentState = data.state;\n"
-"    const btn = document.getElementById('smart-btn');\n"
-"    const btnIcon = document.getElementById('btn-icon');\n"
-"    const btnText = document.getElementById('btn-text');\n"
-"    const msg = document.getElementById('status-msg');\n"
 "    const badge = document.getElementById('conn-badge');\n"
-"    const pruneBtn = document.getElementById('prune-btn');\n"
+"    const dot = document.getElementById('pulse-dot');\n"
+"    const pulseTitle = document.getElementById('pulse-title');\n"
+"    const statusIcon = document.getElementById('status-icon');\n"
+"    const statusTitle = document.getElementById('status-title');\n"
+"    const statusDesc = document.getElementById('status-desc');\n"
+"    const lastEventTag = document.getElementById('last-event-tag');\n"
 "\n"
 "    badge.textContent = 'Live Connected';\n"
 "    badge.style.background = '#065f46';\n"
 "    badge.style.color = '#34d399';\n"
 "\n"
-"    if (data.state === 'SYNCED') {\n"
-"      btn.className = 'btn-synced';\n"
-"      btnIcon.textContent = '✓';\n"
-"      btnText.textContent = 'Repository Up to Date';\n"
-"      msg.textContent = 'All local files match the remote repository bit-for-bit.';\n"
-"    } else if (data.state === 'NEEDS_PUSH') {\n"
-"      btn.className = 'btn-push';\n"
-"      btnIcon.textContent = '⬆';\n"
-"      btnText.textContent = `Push to Remote (${data.push_count} ${data.push_count === 1 ? 'File' : 'Files'})`;\n"
-"      msg.textContent = data.message || 'Local modifications detected. Click button to update remote repo.';\n"
-"    } else if (data.state === 'NEEDS_PULL') {\n"
-"      btn.className = 'btn-pull';\n"
-"      btnIcon.textContent = '⬇';\n"
-"      btnText.textContent = `Pull from Remote (${data.pull_count} ${data.pull_count === 1 ? 'File' : 'Files'})`;\n"
-"      msg.textContent = data.message || 'Remote repository has updates. Click button to pull changes.';\n"
-"    } else if (data.state === 'SYNCING') {\n"
-"      btn.className = 'btn-syncing';\n"
-"      btnIcon.textContent = '⏳';\n"
-"      btnText.textContent = `Syncing... (${data.progress}%)`;\n"
-"      msg.textContent = data.message || 'Transferring chunks and verifying SHA-256...';\n"
+"    if (data.state === 'SYNCING') {\n"
+"      dot.className = 'pulse-dot syncing';\n"
+"      pulseTitle.textContent = 'AUTO-SYNCING IN PROGRESS...';\n"
+"      pulseTitle.style.color = '#60a5fa';\n"
+"      statusIcon.className = 'status-icon syncing';\n"
+"      statusIcon.textContent = '⚡';\n"
+"      statusTitle.textContent = `Auto-Syncing (${data.progress}%)...`;\n"
+"      statusDesc.textContent = data.message || 'Transferring chunks and verifying SHA-256 digests...';\n"
+"    } else {\n"
+"      dot.className = 'pulse-dot';\n"
+"      pulseTitle.textContent = 'Autonomous Real-Time Sync Active';\n"
+"      pulseTitle.style.color = '#34d399';\n"
+"      statusIcon.className = 'status-icon';\n"
+"      statusIcon.textContent = '✓';\n"
+"      statusTitle.textContent = 'Workspace & Remote Repo In Sync';\n"
+"      statusDesc.textContent = 'Zero-click continuous engine active. Any file creation, modification, or deletion in ./workspace is instantly committed to ./storage/repo.';\n"
 "    }\n"
 "\n"
-"    // Check prune (locally deleted files in remote)\n"
-"    if (data.prune_count && data.prune_count > 0) {\n"
-"      pruneBtn.style.display = 'inline-flex';\n"
-"      document.getElementById('prune-count').textContent = data.prune_count;\n"
-"    } else {\n"
-"      pruneBtn.style.display = 'none';\n"
+"    if (data.last_event) {\n"
+"      lastEventTag.textContent = `⚡ Last Event: ${data.last_event}`;\n"
 "    }\n"
 "\n"
 "    document.getElementById('local-count').textContent = `${data.total_local} item(s)`;\n"
@@ -445,7 +448,6 @@ static const char *HTML_DASHBOARD =
 "    localList.innerHTML = '';\n"
 "    if (data.local_files && data.local_files.length > 0) {\n"
 "      data.local_files.forEach(f => {\n"
-"        const isPending = data.push_files && data.push_files.includes(f.name);\n"
 "        localList.innerHTML += `\n"
 "          <li class='file-item'>\n"
 "            <div>\n"
@@ -454,7 +456,7 @@ static const char *HTML_DASHBOARD =
 "            </div>\n"
 "            <div style='display:flex; align-items:center; gap:0.4rem;'>\n"
 "              <button class='btn-action' onclick=\"openModal('local', '${f.name}')\">👁️ View</button>\n"
-"              <span class='${isPending ? \"tag-new\" : \"tag-synced\"}'>${isPending ? \"MODIFIED / NEW\" : \"SYNCED\"}</span>\n"
+"              <span class='tag-synced'>SYNCED</span>\n"
 "            </div>\n"
 "          </li>`;\n"
 "      });\n"
@@ -467,7 +469,6 @@ static const char *HTML_DASHBOARD =
 "    remoteList.innerHTML = '';\n"
 "    if (data.remote_files && data.remote_files.length > 0) {\n"
 "      data.remote_files.forEach(f => {\n"
-"        const isPrunable = data.prune_files && data.prune_files.includes(f.name);\n"
 "        remoteList.innerHTML += `\n"
 "          <li class='file-item'>\n"
 "            <div>\n"
@@ -477,8 +478,7 @@ static const char *HTML_DASHBOARD =
 "            <div style='display:flex; align-items:center; gap:0.4rem;'>\n"
 "              <button class='btn-action' onclick=\"openModal('remote', '${f.name}')\">👁️ View</button>\n"
 "              <a class='btn-action' href=\"/api/download?source=remote&path=${encodeURIComponent(f.name)}\" download>📥 Save</a>\n"
-"              ${isPrunable ? `<button class='btn-action' style='color:#fb923c; border-color:#ea580c; background:#431407;' onclick='handlePruneClick()'>🗑️ Prune</button>` : ''}\n"
-"              <span class='${isPrunable ? \"tag-deleted\" : \"tag-synced\"}'>${isPrunable ? \"DELETED LOCALLY\" : \"HOSTED\"}</span>\n"
+"              <span class='tag-synced'>HOSTED</span>\n"
 "            </div>\n"
 "          </li>`;\n"
 "      });\n"
@@ -497,7 +497,7 @@ static const char *HTML_DASHBOARD =
 "    }\n"
 "    list.innerHTML = '';\n"
 "    items.forEach(h => {\n"
-"      let badgeClass = h.action === 'PUSH' ? 'badge-push' : (h.action === 'PRUNE' ? 'badge-prune' : 'badge-pull');\n"
+"      let badgeClass = h.action === 'PUSH' ? 'badge-push' : 'badge-prune';\n"
 "      list.innerHTML += `\n"
 "        <div class='timeline-item'>\n"
 "          <div>\n"
@@ -540,41 +540,8 @@ static const char *HTML_DASHBOARD =
 "    document.getElementById('file-modal').style.display = 'none';\n"
 "  }\n"
 "\n"
-"  async function handleSmartButtonClick() {\n"
-"    if (currentState === 'SYNCED' || currentState === 'SYNCING') return;\n"
-"\n"
-"    let action = (currentState === 'NEEDS_PULL') ? 'pull' : 'push';\n"
-"    try {\n"
-"      document.getElementById('smart-btn').className = 'btn-syncing';\n"
-"      document.getElementById('btn-text').textContent = 'Executing...';\n"
-"      await fetch('/api/action', {\n"
-"        method: 'POST',\n"
-"        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n"
-"        body: `action=${action}`\n"
-"      });\n"
-"      setTimeout(() => { fetchStatus(); fetchHistory(); }, 500);\n"
-"    } catch (e) {\n"
-"      console.error(e);\n"
-"    }\n"
-"  }\n"
-"\n"
-"  async function handlePruneClick() {\n"
-"    const pBtn = document.getElementById('prune-btn');\n"
-"    if (pBtn) pBtn.textContent = '⏳ Pruning...';\n"
-"    try {\n"
-"      await fetch('/api/action?action=prune', {\n"
-"        method: 'POST',\n"
-"        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n"
-"        body: 'action=prune'\n"
-"      });\n"
-"      setTimeout(() => { fetchStatus(); fetchHistory(); }, 400);\n"
-"    } catch (e) {\n"
-"      console.error(e);\n"
-"    }\n"
-"  }\n"
-"\n"
-"  setInterval(fetchStatus, 1200);\n"
-"  setInterval(fetchHistory, 3000);\n"
+"  setInterval(fetchStatus, 700);\n"
+"  setInterval(fetchHistory, 1500);\n"
 "  fetchStatus();\n"
 "  fetchHistory();\n"
 "</script>\n"
@@ -746,22 +713,11 @@ static void serve_file_preview(int client_fd, const char *full_path, const char 
 }
 
 typedef struct {
+    int client_fd;
     repo_engine_t *engine;
-    char action[16];
-} action_arg_t;
+} http_worker_arg_t;
 
-static void *async_action_worker(void *arg) {
-    action_arg_t *a = (action_arg_t *)arg;
-    if (strcmp(a->action, "pull") == 0) {
-        repo_engine_pull(a->engine);
-    } else if (strcmp(a->action, "prune") == 0) {
-        repo_engine_prune(a->engine);
-    } else {
-        repo_engine_push(a->engine);
-    }
-    free(a);
-    return NULL;
-}
+static void *http_worker_thread(void *arg);
 
 static void handle_http_client(int client_fd, repo_engine_t *engine) {
     char req_buf[2048];
@@ -789,6 +745,8 @@ static void handle_http_client(int client_fd, repo_engine_t *engine) {
         int offset = snprintf(json_buf, sizeof(json_buf),
                  "{\n"
                  "  \"state\": \"%s\",\n"
+                 "  \"auto_sync\": %d,\n"
+                 "  \"last_event\": \"%s\",\n"
                  "  \"push_count\": %zu,\n"
                  "  \"pull_count\": %zu,\n"
                  "  \"prune_count\": %zu,\n"
@@ -798,6 +756,8 @@ static void handle_http_client(int client_fd, repo_engine_t *engine) {
                  "  \"message\": \"%s\",\n"
                  "  \"push_files\": [",
                  repo_state_to_string(diff.state),
+                 engine->auto_sync_running,
+                 engine->last_event_msg,
                  diff.pending_push_count,
                  diff.pending_pull_count,
                  diff.pending_prune_count,
@@ -874,29 +834,18 @@ static void handle_http_client(int client_fd, repo_engine_t *engine) {
         } else {
             serve_file_preview(client_fd, full_path, clean_path, source);
         }
-    } else if (strncmp(req_buf, "POST /api/action", 16) == 0) {
-        char action[16] = "push";
-        if (strstr(req_buf, "action=prune")) {
-            strcpy(action, "prune");
-        } else if (strstr(req_buf, "action=pull")) {
-            strcpy(action, "pull");
-        }
-
-        action_arg_t *arg = malloc(sizeof(action_arg_t));
-        if (arg) {
-            arg->engine = engine;
-            strncpy(arg->action, action, sizeof(arg->action) - 1);
-            pthread_t tid;
-            pthread_create(&tid, NULL, async_action_worker, arg);
-            pthread_detach(tid);
-        }
-
-        send_http_response(client_fd, "HTTP/1.1 200 OK", "application/json", "{\"status\":\"ok\"}");
     } else {
         send_http_response(client_fd, "HTTP/1.1 404 Not Found", "text/plain", "Not Found");
     }
 
     close(client_fd);
+}
+
+static void *http_worker_thread(void *arg) {
+    http_worker_arg_t *w = (http_worker_arg_t *)arg;
+    handle_http_client(w->client_fd, w->engine);
+    free(w);
+    return NULL;
 }
 
 int http_server_init(http_server_t *server, int port, repo_engine_t *engine) {
@@ -907,21 +856,12 @@ int http_server_init(http_server_t *server, int port, repo_engine_t *engine) {
     return 0;
 }
 
-typedef struct {
-    int client_fd;
-    repo_engine_t *engine;
-} http_worker_arg_t;
-
-static void *http_worker_thread(void *arg) {
-    http_worker_arg_t *w = (http_worker_arg_t *)arg;
-    handle_http_client(w->client_fd, w->engine);
-    free(w);
-    return NULL;
-}
-
 int http_server_run(http_server_t *server) {
     if (!server) return -1;
     signal(SIGPIPE, SIG_IGN);
+
+    /* Guarantee auto-sync daemon is running alongside web server */
+    repo_engine_start_autosync(server->engine);
 
     int listen_fd = socket(AF_INET6, SOCK_STREAM, 0);
     int is_v6 = 1;
@@ -971,7 +911,8 @@ int http_server_run(http_server_t *server) {
 
     server->is_running = 1;
     LOG_INFO("HTTP", "=========================================================");
-    LOG_INFO("HTTP", " Smart Action Button UI live at: http://localhost:%d", server->port);
+    LOG_INFO("HTTP", " Autonomous RepoSync Dashboard live at: http://localhost:%d", server->port);
+    LOG_INFO("HTTP", " Zero-click real-time synchronization active!");
     LOG_INFO("HTTP", "=========================================================");
 
     while (server->is_running) {
@@ -1015,5 +956,6 @@ int http_server_run(http_server_t *server) {
 void http_server_stop(http_server_t *server) {
     if (server) {
         server->is_running = 0;
+        repo_engine_stop_autosync(server->engine);
     }
 }
