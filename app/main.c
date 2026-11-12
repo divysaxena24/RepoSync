@@ -17,9 +17,13 @@
 #define DEFAULT_HTTP_PORT  8080
 
 static http_server_t g_server;
+static repo_engine_t *g_engine_ptr = NULL;
 
 static void handle_sig(int sig) {
     if (sig == SIGINT || sig == SIGTERM) {
+        if (g_engine_ptr) {
+            repo_engine_stop_autosync(g_engine_ptr);
+        }
         http_server_stop(&g_server);
     }
 }
@@ -147,6 +151,7 @@ int main(int argc, char *argv[]) {
 
     /* 5. WEB DASHBOARD COMMAND (Default) */
     if (strcmp(cmd, "web") == 0) {
+        g_engine_ptr = &engine;
         signal(SIGPIPE, SIG_IGN);
         signal(SIGINT, handle_sig);
         signal(SIGTERM, handle_sig);
@@ -155,11 +160,14 @@ int main(int argc, char *argv[]) {
         printf(" Local Workspace:   %s\n", local_dir);
         printf(" Remote Repository: %s\n", remote_dir);
         printf(" Web Dashboard:     http://localhost:%d\n", port);
+        printf(" Mode:              Autonomous Real-Time Sync (Auto-Sync Active)\n");
         printf(" Press Ctrl+C to stop.\n");
         printf("=========================================================\n\n");
 
+        repo_engine_start_autosync(&engine);
         http_server_init(&g_server, port, &engine);
         http_server_run(&g_server);
+        repo_engine_stop_autosync(&engine);
         return EXIT_SUCCESS;
     }
 
