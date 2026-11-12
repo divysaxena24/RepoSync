@@ -14,6 +14,8 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/inotify.h>
+#include <poll.h>
 #include <libgen.h>
 
 #define CHUNK_SIZE 65536
@@ -133,6 +135,8 @@ int repo_engine_init(repo_engine_t *engine, const char *local_dir, const char *r
     engine->active_state = REPO_STATE_SYNCED;
     engine->active_progress = 0;
     engine->current_file[0] = '\0';
+    snprintf(engine->last_event_msg, sizeof(engine->last_event_msg), "Autonomous sync engine initialized");
+    engine->auto_sync_running = 0;
 
     pthread_mutex_init(&engine->lock, NULL);
 
@@ -420,4 +424,84 @@ int repo_engine_get_history_json(repo_engine_t *engine, char *out_buf, size_t ma
     }
     snprintf(out_buf + offset, max_len - (size_t)offset, "]");
     return 0;
+}
+
+static void *autosync_worker_thread(void *arg) {
+    repo_engine_t *engine = (repo_engine_t *)arg;
+    LOG_INFO("AUTOSYNC", "Autonomous real-time sync daemon started on: %s", engine->local_dir);
+
+    int inotify_fd = inotify_init1(IN_NONBLOCK);
+    int wd = -1;
+    if (inotify_fd >= 0) {
+        wd = inotify_add_watch(inotify_fd, engine->local_dir,
+                               IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_MOVED_FROM);
+    }
+
+    while (engine->auto_sync_running) {
+        int need_sync = 0;
+
+        if (inotify_fd >= 0 && wd >= 0) {
+            struct pollfd pfd;
+            pfd.fd = inotify_fd;
+            pfd.events = POLLIN;
+
+            int poll_res = poll(&pfd, 1, 300);
+            if (poll_res > 0 && (pfd.revents & POLLIN)) {
+                char event_buf[4096];
+                while (read(inotify_fd, event_buf, sizeof(event_buf)) > 0) {}
+                need_sync = 1;
+            } else if (poll_res == 0) {
+                need_sync = 1;
+            }
+        } else {
+            usleep(300000);
+            need_sync = 1;
+        }
+
+        if (need_sync && engine->auto_sync_running) {
+            repo_diff_t diff;
+            if (repo_compute_diff(engine->local_dir, engine->remote_dir, &diff) == 0) {
+                if (diff.pending_push_count > 0) {
+                    LOG_INFO("AUTOSYNC", "Detected %zu modified/new file(s). Auto-syncing to Remote Repo...",
+                             diff.pending_push_count);
+                    repo_engine_push(engine);
+                    snprintf(engine->last_event_msg, sizeof(engine->last_event_msg),
+                             "Auto-synced %zu file(s) to remote repo", diff.pending_push_count);
+                } else if (diff.pending_prune_count > 0) {
+                    LOG_INFO("AUTOSYNC", "Detected %zu locally deleted file(s). Auto-pruning Remote Repo...",
+                             diff.pending_prune_count);
+                    repo_engine_prune(engine);
+                    snprintf(engine->last_event_msg, sizeof(engine->last_event_msg),
+                             "Auto-pruned %zu deleted file(s) from remote repo", diff.pending_prune_count);
+                }
+            }
+        }
+    }
+
+    if (inotify_fd >= 0) {
+        if (wd >= 0) inotify_rm_watch(inotify_fd, wd);
+        close(inotify_fd);
+    }
+
+    LOG_INFO("AUTOSYNC", "Autonomous real-time sync daemon stopped cleanly");
+    return NULL;
+}
+
+int repo_engine_start_autosync(repo_engine_t *engine) {
+    if (!engine) return -1;
+    if (engine->auto_sync_running) return 0;
+
+    engine->auto_sync_running = 1;
+    if (pthread_create(&engine->auto_sync_thread, NULL, autosync_worker_thread, engine) != 0) {
+        LOG_ERROR("AUTOSYNC", "Failed to start auto-sync thread: %s", strerror(errno));
+        engine->auto_sync_running = 0;
+        return -1;
+    }
+    return 0;
+}
+
+void repo_engine_stop_autosync(repo_engine_t *engine) {
+    if (!engine || !engine->auto_sync_running) return;
+    engine->auto_sync_running = 0;
+    pthread_join(engine->auto_sync_thread, NULL);
 }
